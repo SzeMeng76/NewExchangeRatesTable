@@ -53,7 +53,9 @@ export default async function exec(
 
         // 根据 Visa API 的响应结构提取汇率
         if (data && data.convertedAmount) {
-          result.data[currency] = parseFloat(data.convertedAmount);
+          // 移除逗号分隔符，然后解析为浮点数
+          const cleanedAmount = data.convertedAmount.replace(/,/g, '');
+          result.data[currency] = parseFloat(cleanedAmount);
         } else {
           result.data[currency] = -1;
         }
