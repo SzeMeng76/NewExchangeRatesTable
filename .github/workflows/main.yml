@@ -3,6 +3,7 @@ name: Auto Update
 on:
   schedule:
     - cron: "0 */8 * * *"
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
   build:
