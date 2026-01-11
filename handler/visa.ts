@@ -1,4 +1,4 @@
-import axios from "axios";
+import { chromium } from "playwright";
 
 export default async function exec(
   currencies: CurrenciesJson
@@ -9,25 +9,21 @@ export default async function exec(
   const year = now.getFullYear();
   const dateString = `${month}/${day}/${year}`;
 
-  const headers = {
-    accept: "application/json, text/plain, */*",
-    "accept-language": "en,zh-CN;q=0.9,zh;q=0.8",
-    "sec-ch-ua":
-      '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": '"macOS"',
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-origin",
-    Referer:
-      "https://usa.visa.com/support/consumer/travel-support/exchange-rate-calculator.html",
-    "Referrer-Policy": "no-referrer-when-downgrade",
-  };
-
   const result: ResultData = {
     timestamp: Math.floor(Date.now() / 1000),
     data: {},
   };
+
+  // 启动浏览器
+  const browser = await chromium.launch({
+    headless: true,
+  });
+
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  });
+
+  const page = await context.newPage();
 
   try {
     // 遍历每个货币获取汇率
@@ -37,28 +33,39 @@ export default async function exec(
         continue;
       }
 
-      const endpoint = "https://usa.visa.com/cmsapi/fx/rates";
+      const url = `https://usa.visa.com/cmsapi/fx/rates?amount=1&fee=0&utcConvertedDate=${encodeURIComponent(dateString)}&exchangedate=${encodeURIComponent(dateString)}&fromCurr=${currency}&toCurr=USD`;
+
       try {
-        const { data } = await axios.get(endpoint, {
-          headers,
-          params: {
-            amount: 1,
-            fee: 0,
-            utcConvertedDate: dateString,
-            exchangedate: dateString,
-            fromCurr: currency,
-            toCurr: "USD",
-          },
+        // 使用浏览器访问API
+        const response = await page.goto(url, {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000
         });
 
-        // 根据 Visa API 的响应结构提取汇率
-        if (data && data.convertedAmount) {
-          // 移除逗号分隔符，然后解析为浮点数
-          const cleanedAmount = data.convertedAmount.replace(/,/g, '');
-          result.data[currency] = parseFloat(cleanedAmount);
+        if (response && response.ok()) {
+          const text = await page.textContent('body');
+          if (text) {
+            try {
+              const data = JSON.parse(text);
+              if (data && data.convertedAmount) {
+                // 移除逗号分隔符，然后解析为浮点数
+                const cleanedAmount = data.convertedAmount.replace(/,/g, '');
+                result.data[currency] = parseFloat(cleanedAmount);
+              } else {
+                result.data[currency] = -1;
+              }
+            } catch (parseError) {
+              console.error(`获取 ${currency} 汇率失败`);
+              result.data[currency] = -1;
+            }
+          }
         } else {
+          console.error(`获取 ${currency} 汇率失败`);
           result.data[currency] = -1;
         }
+
+        // 避免请求过快
+        await page.waitForTimeout(200);
       } catch (error) {
         console.error(`获取 ${currency} 汇率失败`);
         result.data[currency] = -1;
@@ -68,5 +75,7 @@ export default async function exec(
     return result;
   } catch (error) {
     throw error;
+  } finally {
+    await browser.close();
   }
 }
