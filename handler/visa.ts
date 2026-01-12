@@ -33,10 +33,10 @@ export default async function exec(
         continue;
       }
 
-      const url = `https://usa.visa.com/cmsapi/fx/rates?amount=1&fee=0&utcConvertedDate=${encodeURIComponent(dateString)}&exchangedate=${encodeURIComponent(dateString)}&fromCurr=${currency}&toCurr=USD`;
+      // Helper function to try fetch with a specific date
+      const tryFetchRate = async (dateStr: string): Promise<number | null> => {
+        const url = `https://usa.visa.com/cmsapi/fx/rates?amount=1&fee=0&utcConvertedDate=${encodeURIComponent(dateStr)}&exchangedate=${encodeURIComponent(dateStr)}&fromCurr=${currency}&toCurr=USD`;
 
-      try {
-        // 使用浏览器访问API
         const response = await page.goto(url, {
           waitUntil: 'domcontentloaded',
           timeout: 30000
@@ -48,17 +48,35 @@ export default async function exec(
             try {
               const data = JSON.parse(text);
               if (data && data.convertedAmount) {
-                // 移除逗号分隔符，然后解析为浮点数
                 const cleanedAmount = data.convertedAmount.replace(/,/g, '');
-                result.data[currency] = parseFloat(cleanedAmount);
-              } else {
-                result.data[currency] = -1;
+                return parseFloat(cleanedAmount);
               }
             } catch (parseError) {
-              console.error(`获取 ${currency} 汇率失败`);
-              result.data[currency] = -1;
+              // JSON parse error
             }
           }
+        }
+        return null;
+      };
+
+      try {
+        // Try today's date first
+        let rate = await tryFetchRate(dateString);
+
+        // If failed (400 or no data), try yesterday's date
+        if (rate === null) {
+          const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+          const yesterdayMonth = String(yesterday.getMonth() + 1).padStart(2, "0");
+          const yesterdayDay = String(yesterday.getDate()).padStart(2, "0");
+          const yesterdayYear = yesterday.getFullYear();
+          const yesterdayDateString = `${yesterdayMonth}/${yesterdayDay}/${yesterdayYear}`;
+
+          console.log(`${currency}: Today's date failed, trying yesterday: ${yesterdayDateString}`);
+          rate = await tryFetchRate(yesterdayDateString);
+        }
+
+        if (rate !== null) {
+          result.data[currency] = rate;
         } else {
           console.error(`获取 ${currency} 汇率失败`);
           result.data[currency] = -1;
