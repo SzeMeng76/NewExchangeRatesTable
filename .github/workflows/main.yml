@@ -27,6 +27,9 @@ jobs:
           NEUTRINO_API_KEY: ${{ secrets.NEUTRINO_API_KEY }}
           WISE_API_KEY: ${{ secrets.WISE_API_KEY }}
 
+      - name: Run unionpay handler
+        run: bun run index.ts unionpay
+
       - name: Commit files
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
